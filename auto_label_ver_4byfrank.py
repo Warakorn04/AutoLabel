@@ -115,6 +115,18 @@ class program :
         shutil.copy(source_path, output_path)
         #print(f"File copied from {source_path} to {output_path}")
         return
+    
+    def check_w_h_range(self, w, h):
+        w_ranges = [(0.35, 0.45), (0.49, 0.59)]
+        w_valid = any(lower <= w <= upper for (lower, upper) in w_ranges)
+        
+        h_ranges = [(0.57, 0.73), (0.77, 0.93)]
+        h_valid = any(lower <= h <= upper for (lower, upper) in h_ranges)
+
+        if w_valid and h_valid:
+            return True
+        else:
+            return False
 
     def run(self) :
         count = 0
@@ -172,6 +184,14 @@ class program :
                     y = y_t.item()/height
                     w = w_t.item()/width
                     h = h_t.item()/height
+
+                    if not self.check_w_h_range(w, h):
+                        # ถ้าไม่อยู่ในช่วง → จัดไฟล์เป็น no detection
+                        no_detection_file = open("{path}/{f}.txt".format(path = report_path,f = "no_detection_out_of_range"),"a")
+                        no_detection_file.write("{f} \n".format(f = self.find_file_name(list_file_name[i])))
+                        no_detection_file.close()
+                        self.copy_files("{path}/{f}".format(path = input_path, f = list_file_name[i]),"{path}/{f}".format(path = no_detection_path , f = list_file_name[i]))
+                        continue  # ข้ามการสร้าง label สำหรับ bounding box นี้
                     # detection
                     #strat
                     start_x = round(x_t.item()) - round(w_t.item()//2) 
