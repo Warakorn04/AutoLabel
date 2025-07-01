@@ -127,6 +127,9 @@ class program :
             return True
         else:
             return False
+        
+    def check_single_detection(self, detections):
+        return detections.xywh.shape[0] == 1
 
     def run(self) :
         count = 0
@@ -158,6 +161,13 @@ class program :
             results = model(img, conf = 0.5, verbose = False)
             detections = results[0].boxes
             cls_t = detections.cls
+            if not self.check_single_detection(detections):
+                # ถ้ามีมากกว่า 1 detection → จัดเป็น no detection
+                no_detection_file = open("{path}/{f}.txt".format(path = report_path,f = "no_detection_more_than_one"),"a")
+                no_detection_file.write("{f} \n".format(f = self.find_file_name(list_file_name[i])))
+                no_detection_file.close()
+                self.copy_files("{path}/{f}".format(path = input_path, f = list_file_name[i]),"{path}/{f}".format(path = no_detection_path , f = list_file_name[i]))
+                continue  # skip การประมวลผลภาพนี้ทันที
             if no_detection_file :
                 if cls_t.numel() == 0 :
                     #create file log-no detection
