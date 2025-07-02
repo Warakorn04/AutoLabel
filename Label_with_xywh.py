@@ -18,7 +18,8 @@ h = 0.6787368486225077
 # === สร้าง folder ถ้ายังไม่มี ===
 os.makedirs(labels_folder, exist_ok=True)
 os.makedirs(file_label_folder, exist_ok=True)
-
+i = 1
+j = 1
 # === PROCESS each image ===
 for filename in os.listdir(image_folder):
     if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp')):
@@ -39,7 +40,8 @@ for filename in os.listdir(image_folder):
             with open(txt_path, "w") as f:
                 f.write(line)
 
-            #print(f"Created label for {filename} ➔ {txt_path}")
+            print(f"{i}")
+            i += 1
         else:
             print(f"No matching class found for {filename}, skipping.")
 
@@ -95,7 +97,8 @@ for filename in selected_files:
         # === Save output image ===
         output_path = os.path.join(file_label_folder, filename)
         cv2.imwrite(output_path, img)
-        #print(f"Saved labeled image: {output_path}")
+        print(f"Sample {j}")
+        j += 1
 
     else:
         print(f"No label file for {filename}, skipping.")
