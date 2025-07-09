@@ -1,104 +1,161 @@
 import os
 import random
-import shutil
+import tkinter as tk
+from tkinter import filedialog, messagebox
+from PIL import Image, ImageTk
 import cv2
 
 # === CONFIG ===
-image_folder = r"C:\Users\WSrisook\Downloads\1906\6Entegris"   # โฟลเดอร์รูปภาพ
-labels_folder = r"C:\Users\WSrisook\Downloads\1906\labels"       # โฟลเดอร์ปลายทางไฟล์ .txt
-file_label_folder = r"C:\Users\WSrisook\Downloads\1906\file_label"  # โฟลเดอร์รูปที่ตีกรอบแล้ว
 classes = ["Canister", "Foam", "Ring", "Tyvek", "Wafer"]
 
-# === SET bounding box values ===
-x = 0.49954802858976477
-y = 0.5574033282796372
-w = 0.43050458369337075
-h = 0.6787368486225077
-   
-# === สร้าง folder ถ้ายังไม่มี ===
-os.makedirs(labels_folder, exist_ok=True)
-os.makedirs(file_label_folder, exist_ok=True)
-i = 1
-j = 1
-# === PROCESS each image ===
-for filename in os.listdir(image_folder):
-    if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp')):
-        class_index = None
-        for idx, class_name in enumerate(classes):
-            if class_name.lower() in filename.lower():
-                class_index = idx
-                break
+bbox_presets = {
+    "6 inch": (0.49954802858976477, 0.5574033282796372, 0.43050458369337075, 0.6787368486225077),
+    "8 inch": (0.4936826531694092, 0.5458452479416916, 0.5703962017917926, 0.8867322545523849)
+}
 
-        if class_index is not None:
-            # Create YOLO format line
-            line = f"{class_index} {x} {y} {w} {h}\n"
+class AutoLabelingApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Auto Labeling")
+        self.root.geometry("500x600")
+        self.root.configure(bg="white")
 
-            # Write to .txt file with the same name as image, in output folder
-            basename = os.path.splitext(filename)[0]
-            txt_path = os.path.join(labels_folder, f"{basename}.txt")
+        self.image_folder = ""
+        self.output_folder = ""
+        self.bbox_size = tk.StringVar(value="6 inch")
 
-            with open(txt_path, "w") as f:
-                f.write(line)
+        self.setup_ui()
 
-            print(f"{i}")
-            i += 1
-        else:
-            print(f"No matching class found for {filename}, skipping.")
+    def setup_ui(self):
+        font_title = ("Arial", 16, "bold")
+        font_label = ("Arial", 12, "bold")
+        font_btn = ("Arial", 10, "bold")
 
-image_files = [f for f in os.listdir(image_folder) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp'))]
+        tk.Label(self.root, text="Auto Labeling", font=font_title, bg="white").pack(pady=10)
 
-# === สุ่มเลือก 10% ของไฟล์ ===
-num_select = max(1, int(len(image_files) * 0.1))
-selected_files = random.sample(image_files, num_select)
+        # Input folder
+        tk.Label(self.root, text="Image input folder", font=font_label, bg="white").place(x=30, y=60)
+        tk.Button(self.root, text="Browse", font=font_btn, command=self.select_input).place(x=400, y=55)
 
-for filename in selected_files:
-    img_path = os.path.join(image_folder, filename)
-    label_name = os.path.splitext(filename)[0] + ".txt"
-    label_path = os.path.join(labels_folder, label_name)
+        # Output folder
+        tk.Label(self.root, text="Image & Label Output folder", font=font_label, bg="white").place(x=30, y=100)
+        tk.Button(self.root, text="Browse", font=font_btn, command=self.select_output).place(x=400, y=95)
 
-    # === อ่านรูป ===
-    img = cv2.imread(img_path)
-    if img is None:
-        print(f"Failed to read image: {img_path}")
-        continue
+        # Size selection
+        tk.Label(self.root, text="Size:", font=font_label, bg="white").place(x=30, y=150)
+        tk.Radiobutton(self.root, text="6 inch", font=font_btn, variable=self.bbox_size, value="6 inch", bg="white").place(x=100, y=150)
+        tk.Radiobutton(self.root, text="8 inch", font=font_btn, variable=self.bbox_size, value="8 inch", bg="white").place(x=180, y=150)
 
-    h_img, w_img, _ = img.shape
+        # Preview area
+        tk.Label(self.root, text="Preview", font=font_label, bg="white").place(x=30, y=200)
+        self.canvas = tk.Canvas(self.root, width=400, height=250, bg="white", highlightbackground="black")
+        self.canvas.place(x=50, y=230)
 
-    # === อ่าน label file ===
-    if os.path.exists(label_path):
-        with open(label_path, "r") as f:
-            lines = f.readlines()
+        # Button
+        tk.Button(self.root, text="Run Auto Labeling", font=font_btn, command=self.run_labeling).place(x=180, y=510)
 
-        for line in lines:
-            parts = line.strip().split()
-            if len(parts) == 5:
-                class_id, x_center, y_center, width, height = parts
-                x_center = float(x_center)
-                y_center = float(y_center)
-                width = float(width)
-                height = float(height)
+    def select_input(self):
+        path = filedialog.askdirectory()
+        if path:
+            self.image_folder = path
+            self.show_preview()
 
-                # แปลงจาก normalized เป็น pixel
-                x_c = x_center * w_img
-                y_c = y_center * h_img
-                w_box = width * w_img
-                h_box = height * h_img
+    def select_output(self):
+        path = filedialog.askdirectory()
+        if path:
+            self.output_folder = path
 
-                x1 = int(x_c - w_box / 2)
-                y1 = int(y_c - h_box / 2)
-                x2 = int(x_c + w_box / 2)
-                y2 = int(y_c + h_box / 2)
+    def run_labeling(self):
+        if not self.image_folder or not self.output_folder:
+            messagebox.showwarning("Missing folder", "Please select both input and output folders.")
+            return
 
-                # วาด rectangle (สีเขียว)
-                cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
-            else:
-                print(f"Invalid label format in {label_path}")
+        os.makedirs(self.output_folder, exist_ok=True)
+        label_folder = os.path.join(self.output_folder, "labels")
+        os.makedirs(label_folder, exist_ok=True)
 
-        # === Save output image ===
-        output_path = os.path.join(file_label_folder, filename)
-        cv2.imwrite(output_path, img)
-        print(f"Sample {j}")
-        j += 1
+        x, y, w, h = bbox_presets[self.bbox_size.get()]
 
-    else:
-        print(f"No label file for {filename}, skipping.")
+        for filename in os.listdir(self.image_folder):
+            if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp')):
+                class_index = None
+                for idx, cname in enumerate(classes):
+                    if cname.lower() in filename.lower():
+                        class_index = idx
+                        break
+                if class_index is not None:
+                    line = f"{class_index} {x} {y} {w} {h}\n"
+                    txt_path = os.path.join(label_folder, os.path.splitext(filename)[0] + ".txt")
+                    with open(txt_path, "w") as f:
+                        f.write(line)
+
+        # === วาดกรอบและเซฟทุกภาพ ===
+        file_label_folder = os.path.join(self.output_folder, "image_label")
+        os.makedirs(file_label_folder, exist_ok=True)
+        image_files = [f for f in os.listdir(self.image_folder) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp'))]
+
+        for filename in image_files:
+            img_path = os.path.join(self.image_folder, filename)
+            label_path = os.path.join(label_folder, os.path.splitext(filename)[0] + ".txt")
+            img = cv2.imread(img_path)
+            if img is None or not os.path.exists(label_path):
+                continue
+
+            h_img, w_img = img.shape[:2]
+            with open(label_path, "r") as f:
+                lines = f.readlines()
+
+            for line in lines:
+                parts = line.strip().split()
+                if len(parts) == 5:
+                    _, x_center, y_center, width, height = map(float, parts)
+                    x_c = x_center * w_img
+                    y_c = y_center * h_img
+                    w_box = width * w_img
+                    h_box = height * h_img
+                    x1, y1 = int(x_c - w_box / 2), int(y_c - h_box / 2)
+                    x2, y2 = int(x_c + w_box / 2), int(y_c + h_box / 2)
+                    cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+
+            cv2.imwrite(os.path.join(file_label_folder, filename), img)
+
+        self.show_preview()
+        messagebox.showinfo("Success", "Auto labeling completed successfully!")
+
+    def show_preview(self):
+        if not self.image_folder:
+            return
+
+        files = [f for f in os.listdir(self.image_folder) if f.lower().endswith(('.jpg', '.png', '.jpeg', '.bmp'))]
+        if not files:
+            return
+
+        selected = random.choice(files)
+        img_path = os.path.join(self.image_folder, selected)
+        img = cv2.imread(img_path)
+
+        if img is None:
+            return
+
+        h_img, w_img = img.shape[:2]
+        x, y, w, h = bbox_presets[self.bbox_size.get()]
+        x_c = x * w_img
+        y_c = y * h_img
+        w_box = w * w_img
+        h_box = h * h_img
+
+        x1, y1 = int(x_c - w_box / 2), int(y_c - h_box / 2)
+        x2, y2 = int(x_c + w_box / 2), int(y_c + h_box / 2)
+
+        cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        pil_img = Image.fromarray(img)
+        pil_img.thumbnail((400, 250))
+        self.tk_img = ImageTk.PhotoImage(pil_img)
+        self.canvas.create_image(200, 125, image=self.tk_img)
+
+# === RUN ===
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = AutoLabelingApp(root)
+    root.mainloop()
